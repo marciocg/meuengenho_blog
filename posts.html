@@ -1,0 +1,43 @@
+%setdefault('user', 'Guest')
+<!DOCTYPE html>
+<html>
+<head>
+  <link type="text/css" rel="stylesheet" href="/main.css" />
+
+  <title>meuengenho Blog</title>
+</head>
+
+<body>
+  <a href="/blog" class="main-title">
+    meuengenho Blog
+  </a>
+
+  <div class="login-area">
+    %if user != 'Guest':
+      {{user}} (<a class="login-link" href="/logout">logout</a>)
+    %else:
+      Welcome, Guest! 
+      < 
+      <a class="login-link" href="/login">login</a>
+      |
+      <a class="login-link" href="/signup">signup</a>
+      >
+    %end
+  </div>
+
+  <div id="content">
+  %for row in rows:
+
+    <a class="login-link" href="/blog/posts/{{row.key()}}">{{row.subject}}</a> (criado em {{row.created.strftime('%d/%m/%Y às %X')}})<br><br>
+ 
+    {{row.content}}<br>
+    %if row.created.strftime('%d/%m/%Y às %X') != row.last_modified.strftime('%d/%m/%Y às %X'):
+       (Atualizado em {{row.last_modified.strftime('%d/%m/%Y às %X')}})
+    %end
+    <hr><br>
+  %end
+  </div>
+</body>
+
+</html>
+

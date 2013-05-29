@@ -1,0 +1,36 @@
+%setdefault('subject', '')
+%setdefault('content', '')
+%setdefault('error', '')
+
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Unit 2 Rot 13</title>
+    <style type="text/css">
+      .label {text-align: right}
+      .error {color: red}
+    </style>
+    <link type="text/css" rel="stylesheet" href="/main.css" />
+  </head>
+
+ <body>
+ <h2>New Post:</h2>
+
+    <form action="/blog/newpost" method="post">
+      <label>
+        <div>subject</div>
+        <input type="text" name="subject" value="{{subject}}">
+      </label>
+
+      <label>
+        <div>blog</div>
+        <textarea name="content">{{content}}</textarea>
+      </label>
+
+      <div class="error">{{error}}</div>
+
+      <input type="submit">
+    </form>
+</body>
+
+</html>
