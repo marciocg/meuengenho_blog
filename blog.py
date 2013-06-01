@@ -65,18 +65,17 @@ def get_age(key):
         val, age = None, 0
         
     return val, age
-    
-    
-def get_posts(update=False):
-    q = Posts.all().order('-created')
-    memcache_key = 'BLOG'
 
-    if update:
-        return q
-    
+
+def get_posts(set_cache=False):
+    q = list(Posts.all().order('-created').fetch(limit=10))
+    memcache_key = 'BLOG'
     posts, age = get_age(memcache_key)
-    
-    if posts is None:
+    logging.error('posts e age antes do if %s - %s)' % (posts, age))
+    if set_cache or not posts:
+        logging.error('entrou no if %s', q)
+        logging.error('setcache %s', set_cache)
+        logging.error('posts %s', set_cache)
         posts = list(q)
         set_age(memcache_key, posts)     
 
@@ -84,14 +83,21 @@ def get_posts(update=False):
     
 
 def age_msg(age):
-    s = 'compilado há %s segundos atrás'
+#    s = 'compilado há %s segundos atrás'
+    s = 'Queried %s seconds ago'
     age = int(age)
 
-    if age < 2:
-        s = s.replace('segundos', 'segundo')
-    
+#    if age < 2:
+    if age == 1:
+#        s = s.replace('segundos', 'segundo')
+         s = s.replace('seconds', 'second')
     return s % age
         
+
+def flush_cache():
+    memcache.flush_all()
+    
+    
 def user_register(**reg_data):
     username = reg_data.pop('username')
     pw_hash = hashlib.sha512((reg_data.pop('password'))).hexdigest()
@@ -194,7 +200,6 @@ def logout_get():
         session.delete()
 
     return redirect('/')
-#    return response.set_header('Set-Cookie', 'user_id=; Path=/')    
 
              
 @get('/signup')
@@ -278,6 +283,12 @@ def blog_json():
 @get('/blog/newpost/')
 @view('newpost.html')
 def newpost_form():
+    u = get_session()
+    
+    if not u:
+        error = 'You should login first!'
+        return template('login-form.html', error=error)
+        
     return dict()
 
 
@@ -290,9 +301,14 @@ def newpost_add():
     if subject and content:
         p = Posts(subject = subject, content = content)
         key = p.put()
-        get_posts(update=True)
-        return redirect('/blog/posts/%s' % key)
-        
+        if key:
+            flush_cache()
+            return redirect('/blog/posts/%s' % key)
+
+        else:
+            error = "Google error."
+            return dict(error=error)
+               
     else:
         error = "Subject and content are required."
         return dict(error = error)
@@ -326,6 +342,12 @@ def permalink(key, json=None):
         return redirect('/blog')
 
 
+@get('/flush')
+def flush():
+    flush_cache()
+    return redirect('/')
+    
+    
 @get('/favicon.ico')
 def favico():
     return static_file('/static/favicon.ico', root='.')
