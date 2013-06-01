@@ -1,20 +1,27 @@
 # -*- coding: utf-8 -*- 
 import re, hashlib, logging
 from json import dumps as json_dumps
-from bottle import app, run, get, post, view, template, request, redirect, static_file, response, request
+from bottle import app, run, get, post, view, template, request, redirect, static_file, response, request, hook
 from google.appengine.ext import db
+from google.appengine.api import memcache
+
+from beaker.middleware import SessionMiddleware
+from datetime import datetime, timedelta
 
 ### Datastore 'Posts' and 'Users' BEGIN
+
 class Posts(db.Model):
     subject = db.StringProperty(required = True)
     content = db.TextProperty(required = True)
     created = db.DateTimeProperty(auto_now_add = True)
     last_modified = db.DateTimeProperty(auto_now = True)
 
+
 class Users(db.Model):
     username = db.StringProperty(required = True)
     pw_hash = db.StringProperty(required = True)
     email = db.EmailProperty(required = False)
+
 ### Datastore 'Posts' and 'Users' END
 
 ### SIGNUP VALIDATION BEGIN
@@ -31,10 +38,60 @@ def valid_email(email):
     return not email or EMAIL_RE.match(email)
 ### SIGNUP VALIDATION END
 
-### Functions for dealing with cookies, users, passwords and its hashes
-secret = str("*(AH9ah89*AH98habab  )")
-#COOKIE_DATA = dict()
+## Session options
+session_opts = {
+    'session.auto': True,
+    'session.key': 'user_id',
+    'sessiom.type': 'cookie',
+    'session.cookie_expires': False,
+    'session.path': '/'
+}
 
+
+### Functions for dealing with memcache, users, passwords and its hashes
+
+def set_age(key, val):
+    now = datetime.utcnow()
+    memcache.set(key, (val, now))
+
+
+def get_age(key):
+    r = memcache.get(key)
+    if r:
+        val, time_saved = r
+        age = (datetime.utcnow() - time_saved).total_seconds()
+        
+    else:
+        val, age = None, 0
+        
+    return val, age
+    
+    
+def get_posts(update=False):
+    q = Posts.all().order('-created')
+    memcache_key = 'BLOG'
+
+    if update:
+        return q
+    
+    posts, age = get_age(memcache_key)
+    
+    if posts is None:
+        posts = list(q)
+        set_age(memcache_key, posts)     
+
+    return posts, age
+    
+
+def age_msg(age):
+    s = 'compilado há %s segundos atrás'
+    age = int(age)
+
+    if age < 2:
+        s = s.replace('segundos', 'segundo')
+    
+    return s % age
+        
 def user_register(**reg_data):
     username = reg_data.pop('username')
     pw_hash = hashlib.sha512((reg_data.pop('password'))).hexdigest()
@@ -56,50 +113,56 @@ def user_register(**reg_data):
         user = Users(username = username, pw_hash = pw_hash)
         key = user.put()
         return key
-        
-    else:        
-        return False        
 
-def setcookie_secure(**cookie):
-    response.set_cookie(cookie["userid"], cookie["username"], secret=cookie["secret"], path="/", domain="localhost", httponly=True)
-    return True
 
-def getcookie_secure(name="userid"):
-    cookie = request.get_cookie(name, secret=secret)
-    return cookie
+def set_session(username):
+    session = request.environ.get('beaker.session')
+    session['username'] = username
 
-def delcookie():
-    return response.set_header('Set-Cookie', 'userid=deleted; Max-Age=0; Path=/; Domain=localhost; HttpOnly')    
+
+def get_session():
+    session = request.environ.get('beaker.session')
+    logged = 'username' in session
+    
+    if logged:
+        return session['username']
+
 
 def render_json(dbModel, permalink=False):
     dic = dict()
-    res = list()
     if permalink:
         dic['subject'] = dbModel.subject
         dic['content'] = dbModel.content
         dic['created'] = dbModel.created.strftime('%d/%m/%Y %H:%M')
         dic['last_modified'] = dbModel.last_modified.strftime('%d/%m/%Y %H:%M')
-        res.append(dic)
+        return dic
         
     else:
+        res = list()
         for row in dbModel.run():
             dic['subject'] = row.subject
             dic['content'] = row.content
             dic['created'] = row.created.strftime('%d/%m/%Y %H:%M')
             dic['last_modified'] = row.last_modified.strftime('%d/%m/%Y %H:%M')
             res.append(dic)
-        
-    return json_dumps(res)
+        return json_dumps(res)
 
-def posts():
-    return Posts.all().order('-created')
     
 ### END FUNCTIONS    
+@get('/welcome')
+@get('unit3/welcome')    
+def welcome():
+    u = get_session()
     
+    if u:
+        return 'Welcome, %s', u
+
+
 @get('/login')
 @view('login-form.html')
 def login():
-    u = request.get_cookie("userid", secret=secret)
+    u = get_session()
+    
     if not u:
         return dict()
         
@@ -114,9 +177,9 @@ def login_valid():
     pw_hash = hashlib.sha512((password)).hexdigest()
     login = Users.gql("WHERE username = :1 AND pw_hash = :2", username, pw_hash).get()
     if login:
-        cookie = dict(userid="userid", username=username, secret=secret)
-        setcookie_secure(**cookie)
-            
+        set_session(username)
+        return redirect('/')
+             
     else:
         params = dict(error = "login failed!")
         return template('login-form.html', **params) 
@@ -124,7 +187,14 @@ def login_valid():
  
 @get('/logout')
 def logout_get():
-    delcookie()
+    session = request.environ.get('beaker.session')
+    logged = 'username' in session
+    
+    if logged:
+        session.delete()
+
+    return redirect('/')
+#    return response.set_header('Set-Cookie', 'user_id=; Path=/')    
 
              
 @get('/signup')
@@ -162,16 +232,15 @@ def signup_post():
 
     if have_error:
         return template('signup-form.html', **params)
+
     else:
         reg_data = dict(username = username, password = password, email = email)
         logging.error("reg_data values %s ", reg_data)        
         key = user_register(**reg_data)
         
         if key:
-            logging.error("key ok! str: %s", key)            
-            cookie = dict(userid="userid", username=username, secret=secret)
-            setcookie_secure(**cookie)
-#            return redirect('/login')
+            set_session(username)
+            return redirect('/')
 
         else:
             logging.error("key falhou!")    
@@ -184,13 +253,13 @@ def signup_post():
 @get('/blog/')
 @view('posts.html')
 def blog():
-    u = getcookie_secure()
-
-    if not u:       
+    u = get_session()
+    
+    if not u:
         u = "Guest"
-                            
-    resul = posts()
-    return dict(rows = resul, user = u)
+
+    posts, age = get_posts()
+    return dict(rows=posts, user=u, age=age_msg(age))
 
 
 @get('.json')
@@ -215,12 +284,13 @@ def newpost_form():
 @post('/blog/newpost')
 @view('newpost.html')
 def newpost_add():    
-    subject = request.forms.get('subject')
-    content = request.forms.get('content')
+    subject = unicode(request.forms.get('subject'), 'UTF-8')
+    content = unicode(request.forms.get('content'), 'UTF-8')
     
     if subject and content:
         p = Posts(subject = subject, content = content)
         key = p.put()
+        get_posts(update=True)
         return redirect('/blog/posts/%s' % key)
         
     else:
@@ -231,9 +301,15 @@ def newpost_add():
 @get('/blog/posts/<key>')
 @get('/blog/posts/<key>.<json>')
 @get('/blog/posts/<key>/.<json>')
-def permalink(key, json = None):
-    u = getcookie_secure()
-    post = db.get(key)
+def permalink(key, json=None):
+    u = get_session()
+    memcache_post_key = 'POST_' + key
+    
+    post, age = get_age(memcache_post_key)
+    if not post:
+        post = db.get(key)
+        set_age(memcache_post_key, post)
+        age = 0
 
     if post and json:
         response.content_type = "application/json; charset=UTF-8"
@@ -241,21 +317,13 @@ def permalink(key, json = None):
         
     elif post:
         if not u:
-            return template('permalink.html', post = post)
+            return template('permalink.html', post=post, age=age_msg(age))
             
         else:
-            return template('permalink.html', post = post, user = u)
+            return template('permalink.html', post = post, user = u, age=age_msg(age))
 
     else:
         return redirect('/blog')
-
-
-### DIDN'T WORKED:        
-#@get('/<filename>')
-#def static(filename):
-#    if filename is ('favicon.ico' or 'main.css'):
-#        return static_file('filename', root='static')
-###
 
 
 @get('/favicon.ico')
@@ -268,6 +336,6 @@ def css():
     return static_file('/static/main.css', root='.')
 
 
-app = app()
+#app = app()
+app = SessionMiddleware(app(), session_opts)
 run(server='gae', debug=True)
-        
