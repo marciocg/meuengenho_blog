@@ -6,4 +6,4 @@ threadsafe: true
 
 handlers:
 - url: /.*
-  script: blog.app
+  script: main.app
