@@ -113,8 +113,8 @@ def blog():
 
     if not u:
         u = "Guest"
-
     posts, age = get_posts()
+
     return dict(rows=posts, user=u, age=age_msg(age))
 
 
@@ -123,9 +123,9 @@ def blog():
 @get('/blog.json')
 @get('/blog/.json')
 def blog_json():
-    resul = get_posts()
+    posts, age = get_posts()
     response.content_type = "application/json; charset=UTF-8"
-    return render_json(resul)
+    return render_json(posts)
 
 
 @get('/newpost')
@@ -165,6 +165,24 @@ def newpost_add():
         return dict(error=error)
 
 
+@get('/blog/posts/<key>.<json>')
+@get('/blog/posts/<key>/.<json>')
+def permalink(key, json=None):
+    u = get_session()
+    memcache_post_key = 'POST_' + key
+    post, age = get_age(memcache_post_key)
+
+    if not post:
+        post = db.get(key)
+        set_age(memcache_post_key, post)
+        age = 0
+    
+    if json:
+        response.content_type = "application/json; charset=UTF-8"
+
+    return render_json(post, permalink=True)
+
+
 @get('/blog/posts/<key>')
 @view('permalink.html')
 def permalink(key):
@@ -182,22 +200,6 @@ def permalink(key):
     else:
         return dict(post=post, user=u, age=age_msg(age))
 
-#@get('/blog/posts/<key>.<json>')
-@get('/blog/posts/<key>/.<json>')
-def permalink(key, json=None):
-    u = get_session()
-    memcache_post_key = 'POST_' + key
-    post, age = get_age(memcache_post_key)
-
-    if not post:
-        post = db.get(key)
-        set_age(memcache_post_key, post)
-        age = 0
-    
-    if json:
-        response.content_type = "application/json; charset=UTF-8"
-
-    return render_json(post, permalink=True)
 
 @get('/flush')
 def flush():
@@ -212,7 +214,7 @@ def favico():
 
 @get('/main.css')
 def css():
-    return static_file('/static/main.css', root='.')
+    return static_file('static/main.css', root='.')
 
 
 # Session options - beaker

@@ -114,7 +114,7 @@ def get_session():
 
 
 def render_json(post, permalink=False):
-    """ var post: dbModel.run() or db.get() object
+    """ var post: list(dbModel.run()) or db.get() object
     """
     dic = dict()
     if permalink:
@@ -126,11 +126,11 @@ def render_json(post, permalink=False):
 
     else:
         res = list()
-        for row in post[0]:
-            #memcache sends post variable as tuple, don't know why
+        for row in post:
             dic['subject'] = row.subject
             dic['content'] = row.content
             dic['created'] = row.created.strftime('%d/%m/%Y %H:%M')
             dic['last_modified'] = row.last_modified.strftime('%d/%m/%Y %H:%M')
             res.append(dic)
+            dic = dict() #cleans dict. If not, the res.append(dic) appends the first result many times; don't know why
         return json_dumps(res)
