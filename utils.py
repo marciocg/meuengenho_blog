@@ -53,11 +53,11 @@ def get_age(key):
 
 
 def get_posts(set_cache=False):
-    q = list(Posts.all().order('-created').run(limit=10))
     memcache_key = 'BLOG'
     posts, age = get_age(memcache_key)
 
     if set_cache or not posts:
+        q = Posts.all().order('-created').run(limit=10)
         posts = list(q)
         set_age(memcache_key, posts)
 
@@ -65,13 +65,10 @@ def get_posts(set_cache=False):
 
 
 def age_msg(age):
-#    s = 'compilado há %s segundos atrás'
     s = 'Queried %s seconds ago'
     age = int(age)
 
-#    if age < 2:
     if age == 1:
-#        s = s.replace('segundos', 'segundo')
         s = s.replace('seconds', 'second')
     return s % age
 
@@ -116,18 +113,21 @@ def get_session():
         return session['username']
 
 
-def render_json(dbModel, permalink=False):
+def render_json(post, permalink=False):
+    """ var post: dbModel.run() or db.get() object
+    """
     dic = dict()
     if permalink:
-        dic['subject'] = dbModel.subject
-        dic['content'] = dbModel.content
-        dic['created'] = dbModel.created.strftime('%d/%m/%Y %H:%M')
-        dic['last_modified'] = dbModel.last_modified.strftime('%d/%m/%Y %H:%M')
+        dic['subject'] = post.subject
+        dic['content'] = post.content
+        dic['created'] = post.created.strftime('%d/%m/%Y %H:%M')
+        dic['last_modified'] = post.last_modified.strftime('%d/%m/%Y %H:%M')
         return dic
 
     else:
         res = list()
-        for row in dbModel.run():
+        for row in post[0]:
+            #memcache sends post variable as tuple, don't know why
             dic['subject'] = row.subject
             dic['content'] = row.content
             dic['created'] = row.created.strftime('%d/%m/%Y %H:%M')

@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 # main.py - app with bottle.py framework
 
-
 import hashlib
 
 from bottle import app, run, get, post, view, template, request, redirect, static_file, response
@@ -124,7 +123,7 @@ def blog():
 @get('/blog.json')
 @get('/blog/.json')
 def blog_json():
-    resul = posts()
+    resul = get_posts()
     response.content_type = "application/json; charset=UTF-8"
     return render_json(resul)
 
@@ -167,33 +166,38 @@ def newpost_add():
 
 
 @get('/blog/posts/<key>')
-@get('/blog/posts/<key>.<json>')
-@get('/blog/posts/<key>/.<json>')
 @view('permalink.html')
-def permalink(key, json=None):
+def permalink(key):
     u = get_session()
     memcache_post_key = 'POST_' + key
-
     post, age = get_age(memcache_post_key)
+
     if not post:
         post = db.get(key)
         set_age(memcache_post_key, post)
         age = 0
 
-    if post and json:
-        response.content_type = "application/json; charset=UTF-8"
-        return render_json(post, permalink=True)
-
-    elif post:
-        if not u:
-            return dict(post=post, age=age_msg(age))
-
-        else:
-            return dict(post=post, user=u, age=age_msg(age))
-
+    if not u:
+        return dict(post=post, age=age_msg(age))
     else:
-        return redirect('/')
+        return dict(post=post, user=u, age=age_msg(age))
 
+#@get('/blog/posts/<key>.<json>')
+@get('/blog/posts/<key>/.<json>')
+def permalink(key, json=None):
+    u = get_session()
+    memcache_post_key = 'POST_' + key
+    post, age = get_age(memcache_post_key)
+
+    if not post:
+        post = db.get(key)
+        set_age(memcache_post_key, post)
+        age = 0
+    
+    if json:
+        response.content_type = "application/json; charset=UTF-8"
+
+    return render_json(post, permalink=True)
 
 @get('/flush')
 def flush():
@@ -221,4 +225,4 @@ session_opts = {
 }
 
 app = SessionMiddleware(app(), session_opts)
-run(server='gae')
+run(server='gae', debug=True)
