@@ -6,13 +6,14 @@ Blog app implementation for udacity_cs253 classes, but using [bottle.py](bottlep
 The app was made to run in Google AppEngine, with Google Datastore as database.
 
 
-### Know issues:
+### Known issues:
 
 - there's a /flush route to clean memcache. Sometimes when the code is changed, gae returns HTTP 500 because of memcache, don't know why.
- cleaning/flushing memcache solves the problem.
+ Cleaning/flushing memcache solves the problem.
 
 
 ## TODO:
 
 - BETTER DESIGN/LAYOUT;
-- Include link to json api in template files.
+- Include link to json api in template files;
+- Include user auth with facebook/google+.
